@@ -198,7 +198,10 @@ async def mine():
     if not node.mempool:
         raise HTTPException(status_code=400, detail="Mempool vide — rien à miner.")
 
+    # Synchroniser le mempool du node avec la liste pending du Chain avant de miner
+    node.chain.pending_transactions = list(node.mempool)
     block = node.chain.mine_block()
+    node.mempool = []  # chain.mine_block() a vidé pending_transactions, on vide aussi le mempool
 
     # Mettre à jour l'état avec le nouveau bloc
     for tx in block.transactions:
