@@ -57,6 +57,27 @@ class Block:
     def calculate_hash(self) -> str:
         return hash_data(self.b_header.to_dict())
 
+    def to_network_dict(self) -> dict:
+        """Sérialise le bloc entier (header + transactions) pour envoi réseau."""
+        return {
+            "header": self.b_header.to_dict(),
+            "transactions": [tx.to_network_dict() for tx in self.transactions],
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Block":
+        from src.core.transaction import Transaction
+
+        h = data["header"]
+        header = BlockHeader(
+            prev_hash=h["prev_hash"],
+            merkle_root=h["merkle_root"],
+            timestamp=h["timestamp"],
+            nonce=h["nonce"],
+        )
+        transactions = [Transaction.from_dict(t) for t in data.get("transactions", [])]
+        return cls(header, transactions)
+
     @classmethod
     def create(cls, prev_hash: str, transactions: list[Transaction]) -> "Block":
         """Crée un bloc non miné avec merkle_root calculé et timestamp courant."""

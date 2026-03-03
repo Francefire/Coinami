@@ -37,6 +37,24 @@ class Transaction:
     def calculate_hash(self) -> str:
         return hash_data(self.to_dict())
 
+    def to_network_dict(self) -> dict:
+        """Sérialise la transaction AVEC la signature (pour envoi réseau)."""
+        d = self.to_dict()
+        d["signature"] = self.signature
+        return d
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Transaction":
+        return cls(
+            type_tx=data["type_tx"],
+            sender_address=data["sender_address"],
+            receiver_address=data["receiver_address"],
+            amount=data["amount"],
+            nonce=data["nonce"],
+            payload=data.get("payload", {}),
+            signature=data.get("signature", ""),
+        )
+
     def is_valid(self) -> bool:
         """Vérifie la validité de la transaction.
 
