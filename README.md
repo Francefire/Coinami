@@ -33,9 +33,19 @@ pip install -r requirements.txt
 
 Le réseau local de démonstration fonctionne avec 3 nœuds.
 
-1. Lancer le Nœud A (Port 5000) : `python src/p2p/node.py --port 5000`
-2. Lancer le Nœud B (Port 5001) : `python src/p2p/node.py --port 5001`
-3. Lancer le Nœud C (Port 5002) : `python src/p2p/node.py --port 5002`
+1. Lancer le Nœud A (Port 5000) : `python src/p2p/node.py --port 5000 --difficulty 1`
+2. Lancer le Nœud B (Port 5001) : `python src/p2p/node.py --port 5001 --difficulty 1`
+3. Lancer le Nœud C (Port 5002) : `python src/p2p/node.py --port 5002 --difficulty 1`
+
+### Test d'interaction entre nœuds
+
+Pour tester l'interaction entre les nœuds de la blockchain :
+
+```bash
+python test_nodes_interaction.py
+```
+
+Ce script valide que les nœuds peuvent communiquer, synchroniser les transactions et les blocs correctement.
 
 ## 🏗️ Architecture et Modèle de Données
 
