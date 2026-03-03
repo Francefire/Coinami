@@ -6,12 +6,14 @@ Coinami est une implémentation minimaliste et fonctionnelle d'une blockchain. C
 ## 🚀 Installation et Démarrage
 
 ### Prérequis
+
 * Python 3.8+
 * `pip` et `venv`
 
 ### Installation
 
 1. Cloner le dépôt et créer un environnement virtuel :
+
 ```bash
    git clone <ton-repo-url>
    cd coinami
@@ -20,14 +22,12 @@ Coinami est une implémentation minimaliste et fonctionnelle d'une blockchain. C
 
 ```
 
-2. Installer les dépendances :
+1. Installer les dépendances :
 
 ```bash
 pip install -r requirements.txt
 
 ```
-
-
 
 ### Lancement multi-nœuds (Démonstration P2P)
 
@@ -46,7 +46,6 @@ Le projet est structuré autour de 4 modules principaux dans le dossier `src/` :
 * `Transaction` : Définit l'expéditeur, le destinataire, le montant, le nonce et le payload.
 * `BlockHeader` & `Block` : Contient le hash du bloc précédent (`prev_hash`), la racine Merkle (`merkle_root`), le timestamp et le nonce.
 * `Chain` : Gère la liste des blocs, la difficulté de minage et les transactions en attente.
-
 
 * **`p2p/`** : L'infrastructure réseau avec la classe `Node` qui maintient sa propre `Chain`, son `State` et son `mempool`.
 * **`contracts/`** : Moteur d'exécution déterministe (`State`) mettant à jour les soldes (`balances`) et les contrats (`escrow`).
