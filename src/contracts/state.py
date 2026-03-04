@@ -81,7 +81,7 @@ class State:
             return False
         if entry["status"] != "locked":
             return False
-        if tx.sender_address == entry["sender"]:
+        if tx.sender_address != entry["receiver"]:
             return False
         
         self.balances[entry["receiver"]] = (
