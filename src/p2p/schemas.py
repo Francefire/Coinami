@@ -21,11 +21,10 @@ class TransactionResponse(BaseModel):
     hash: str = Field(description="Hash of the submitted transaction")
 
 
-class BlockRequest(BaseModel):
-    """Request body for submitting a block (simplified)."""
-    # You can extend this based on your Block structure
-    data: dict = Field(..., description="Block data")
-
+# ============================================================================
+# Block Models (re-exported from domain)
+# ============================================================================
+# BlockRequest and BlockResponse use the domain Block model
 
 class BlockResponse(BaseModel):
     """Successful block submission response."""
