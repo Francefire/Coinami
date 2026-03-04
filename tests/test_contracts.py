@@ -158,5 +158,28 @@ class TestCancelEscrow:
                          extra_payload={"escrow_id": "e1"})
         assert state.execute_tx(cancel) is False
 
-    def test_get_balance_unknown_address_is_zero(self, state):
-        assert state.get_balance("nobody") == 0.0
+    def test_only_sender_or_receiver_can_cancel(self, state):
+        # Initialiser charlie avec un solde
+        state.balances["charlie"] = 50.0
+        
+        create = make_tx("create_escrow", "alice", "bob", 15.0,
+                         extra_payload={"escrow_id": "e1"})
+        state.execute_tx(create)
+        
+        # charlie essaie d'annuler l'escrow (n'est ni sender ni receiver)
+        cancel_by_third_party = make_tx("cancel_escrow", "charlie", "alice", 0,
+                                        extra_payload={"escrow_id": "e1"})
+        assert state.execute_tx(cancel_by_third_party) is False
+        assert state.escrow["e1"]["status"] == "locked"  # Status inchangé
+        
+        # Seul alice (sender) peut annuler avec bob (receiver) comme receiver
+        cancel_by_sender = make_tx("cancel_escrow", "alice", "bob", 0,
+                                   extra_payload={"escrow_id": "e1"})
+        assert state.execute_tx(cancel_by_sender) is True
+        assert state.get_balance("alice") == 100.0  # Remboursée
+        assert state.escrow["e1"]["status"] == "refunded"
+
+
+def test_get_balance_unknown_address_is_zero():
+    state = State()
+    assert state.get_balance("nobody") == 0.0
