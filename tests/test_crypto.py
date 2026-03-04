@@ -20,7 +20,19 @@ class TestHashData:
 
 
 class TestWallet:
-    def test_address_is_40_hex_chars(self):
+
+    def test_construct_with_given_private_key(self):
+        newWallet1 = Wallet()
+        newWallet2 = Wallet()
+        w1 = Wallet(private_key=newWallet1._private_key)
+        w2 = Wallet(private_key=newWallet2._private_key)
+        assert w1.address == newWallet1.address
+        assert w2.address == newWallet2.address
+        assert w1.public_key_bytes == newWallet1.public_key_bytes
+        assert w2.public_key_bytes == newWallet2.public_key_bytes
+        assert w1.public_key_bytes != w2.public_key_bytes
+
+    def test_address_is_40_hex_chars_new_wallet(self):
         w = Wallet()
         assert len(w.address) == 40
         int(w.address, 16)  # doit être du hex valide
