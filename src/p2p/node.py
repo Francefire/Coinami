@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import asynccontextmanager
 
 import httpx
 import uvicorn
@@ -10,6 +11,16 @@ from src.contracts.state import State
 from src.core.block import Block
 from src.core.chain import Chain
 from src.core.transaction import Transaction
+from src.p2p.schemas import (
+    TransactionRequest, TransactionResponse,
+    BlockRequest, BlockResponse,
+    PeersRequest, PeersResponse, PeersListResponse,
+    MempoolResponse,
+    StateResponse,
+    ChainResponse,
+    MineResponse,
+    SyncResponse,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -129,81 +140,108 @@ class Node:
 # Application FastAPI (singleton par processus)
 # ---------------------------------------------------------------------------
 
-app = FastAPI(title="Coinami Node")
 node: Node | None = None
 
 
-@app.post("/tx", status_code=201)
-async def post_transaction(data: dict):
-    """Reçoit une transaction, la valide, l'ajoute au mempool et la diffuse."""
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Initialize and cleanup the node on app startup/shutdown."""
+    global node
+    # Startup
+    node = Node(port=5000, difficulty=3)
+    print(f"✓ Node initialized on port {node.port}")
+    yield
+    # Shutdown
+    print("✓ Node shutdown")
+
+
+app = FastAPI(title="Coinami Node", lifespan=lifespan)
+
+
+@app.post("/tx", status_code=201, response_model=TransactionResponse, tags=["Transactions"])
+async def post_transaction(
+    tx_data: TransactionRequest
+) -> TransactionResponse:
+    """
+    Submit a new transaction to the mempool.
+
+    This endpoint:
+    - Validates the transaction structure and signature
+    - Adds it to the mempool
+    - Broadcasts it to all connected peers
+    - Returns the transaction hash
+
+    **Validation Rules:**
+    - Amount must be positive
+    - Signature must be valid
+    - Transaction must not have been received before
+    """
     try:
-        tx = Transaction.from_dict(data)
-    except (KeyError, TypeError) as exc:
-        raise HTTPException(status_code=422, detail=str(exc))
+        tx = Transaction.from_dict(tx_data.model_dump())
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=f"Invalid transaction format: {str(exc)}")
 
     accepted = node.receive_tx(tx)
     if not accepted:
-        raise HTTPException(status_code=400, detail="Transaction invalide ou déjà reçue.")
+        raise HTTPException(status_code=400, detail="Transaction invalid or already received")
 
     # Broadcast asynchrone aux pairs
     await node.broadcast_tx(tx.to_network_dict())
-    return {"status": "accepted", "hash": tx.calculate_hash()}
+    return TransactionResponse(status="accepted", hash=tx.calculate_hash())
 
 
-@app.post("/block", status_code=201)
-async def post_block(data: dict):
-    """Reçoit un bloc, le valide et l'ajoute à la chaîne."""
+@app.post("/block", status_code=201, response_model=BlockResponse, tags=["Blocks"])
+async def post_block(block_data: BlockRequest) -> BlockResponse:
+    """Submit a newly mined block to the chain with validation and broadcast."""
     try:
-        block = Block.from_dict(data)
-    except (KeyError, TypeError) as exc:
-        raise HTTPException(status_code=422, detail=str(exc))
+        block = Block.from_dict(block_data.data)
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=f"Invalid block format: {str(exc)}")
 
     accepted = node.receive_block(block)
     if not accepted:
-        raise HTTPException(status_code=400, detail="Bloc invalide ou déjà reçu.")
+        raise HTTPException(status_code=400, detail="Block invalid or already received")
 
     await node.broadcast_block(block.to_network_dict())
-    return {"status": "accepted", "hash": block.calculate_hash()}
+    return BlockResponse(status="accepted", hash=block.calculate_hash())
 
 
-@app.get("/chain")
-def get_chain():
-    """Retourne la chaîne complète sérialisée."""
-    return {
-        "length": len(node.chain.blocks),
-        "blocks": [b.to_network_dict() for b in node.chain.blocks],
-    }
+@app.get("/chain", response_model=ChainResponse, tags=["Chain"])
+def get_chain() -> ChainResponse:
+    """Retrieve the complete blockchain with all blocks."""
+    return ChainResponse(
+        length=len(node.chain.blocks),
+        blocks=[b.to_network_dict() for b in node.chain.blocks],
+    )
 
 
-@app.post("/peers", status_code=201)
-def add_peers(data: dict):
-    """Enregistre de nouveaux pairs. Attend { "peers": ["http://host:port", ...] }."""
-    new_peers: list[str] = data.get("peers", [])
+@app.post("/peers", status_code=201, response_model=PeersResponse, tags=["Peers"])
+def add_peers(peers_data: PeersRequest) -> PeersResponse:
+    """Register new peer nodes to the network."""
     added = []
-    for peer in new_peers:
+    for peer in peers_data.peers:
         if isinstance(peer, str) and peer not in node.peers:
             node.peers.append(peer)
             added.append(peer)
-    return {"added": added, "total": len(node.peers)}
+    return PeersResponse(added=added, total=len(node.peers))
 
 
-@app.get("/peers")
-def list_peers():
-    return {"peers": node.peers}
+@app.get("/peers", response_model=PeersListResponse, tags=["Peers"])
+def list_peers() -> PeersListResponse:
+    """List all connected peer nodes."""
+    return PeersListResponse(peers=node.peers)
 
 
-@app.get("/mine")
-async def mine():
-    """Mine un nouveau bloc avec les transactions en attente et le diffuse."""
+@app.get("/mine", response_model=MineResponse, tags=["Mining"])
+async def mine() -> MineResponse:
+    """Mine a new block with pending transactions and broadcast it."""
     if not node.mempool:
-        raise HTTPException(status_code=400, detail="Mempool vide — rien à miner.")
+        raise HTTPException(status_code=400, detail="Mempool empty — nothing to mine")
 
-    # Synchroniser le mempool du node avec la liste pending du Chain avant de miner
     node.chain.pending_transactions = list(node.mempool)
     block = node.chain.mine_block()
-    node.mempool = []  # chain.mine_block() a vidé pending_transactions, on vide aussi le mempool
+    node.mempool = []
 
-    # Mettre à jour l'état avec le nouveau bloc
     for tx in block.transactions:
         node.state.execute_tx(tx)
 
@@ -211,24 +249,39 @@ async def mine():
     node.seen_ids.add(block.calculate_hash())
     await node.broadcast_block(block_dict)
 
-    return {"status": "mined", "hash": block.calculate_hash(), "block": block_dict}
+    return MineResponse(
+        status="mined",
+        hash=block.calculate_hash(),
+        block=block_dict
+    )
 
 
-@app.get("/mempool")
-def get_mempool():
-    return {"length": len(node.mempool), "transactions": [tx.to_network_dict() for tx in node.mempool]}
+@app.get("/mempool", response_model=MempoolResponse, tags=["Mempool"])
+def get_mempool() -> MempoolResponse:
+    """View all pending transactions in the mempool."""
+    return MempoolResponse(
+        length=len(node.mempool),
+        transactions=[tx.to_network_dict() for tx in node.mempool]
+    )
 
 
-@app.get("/state")
-def get_state():
-    return {"balances": node.state.balances, "escrow": node.state.escrow}
+@app.get("/state", response_model=StateResponse, tags=["State"])
+def get_state() -> StateResponse:
+    """Get the current state with account balances and escrow."""
+    return StateResponse(
+        balances=node.state.balances,
+        escrow=node.state.escrow
+    )
 
 
-@app.post("/sync")
-async def sync():
-    """Déclenche la synchronisation de la chaîne avec les pairs."""
+@app.post("/sync", response_model=SyncResponse, tags=["Sync"])
+async def sync() -> SyncResponse:
+    """Synchronize the blockchain with connected peers."""
     await node.sync_chain()
-    return {"status": "synced", "length": len(node.chain.blocks)}
+    return SyncResponse(
+        status="synced",
+        length=len(node.chain.blocks)
+    )
 
 
 # ---------------------------------------------------------------------------
