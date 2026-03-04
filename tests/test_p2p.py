@@ -97,8 +97,14 @@ class TestPostTransaction:
         assert resp.status_code == 400
 
     def test_invalid_tx_rejected(self, client, wallet):
-        tx = Transaction("transfer", wallet.address, "ab" * 20, 5.0, 1,
-                         {"public_key": wallet.public_key_bytes.hex()})
+        tx = Transaction(
+            type_tx="transfer",
+            sender_address=wallet.address,
+            receiver_address="ab" * 20,
+            amount=5.0,
+            nonce=1,
+            payload={"public_key": wallet.public_key_bytes.hex()}
+        )
         tx.signature = ""  # pas de signature
         resp = client.post("/tx", json=tx.to_network_dict())
         assert resp.status_code == 400

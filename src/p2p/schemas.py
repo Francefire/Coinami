@@ -1,43 +1,19 @@
 """API request/response models for Coinami endpoints.
 
-These Pydantic models:
-- Auto-generate OpenAPI documentation
-- Validate incoming requests
-- Are easy to update when the project evolves
+These Pydantic models work in conjunction with domain models
+from src.core.* which are themselves Pydantic BaseModels.
 """
 
 from pydantic import BaseModel, Field
 from typing import Optional
+from src.core.transaction import Transaction
+from src.core.block import Block, BlockHeader
 
 
 # ============================================================================
-# Transaction Models
+# Transaction Models (re-exported from domain)
 # ============================================================================
-
-class TransactionRequest(BaseModel):
-    """Request body for submitting a transaction."""
-    type_tx: str = Field(..., description="Transaction type (e.g., 'transfer')")
-    sender_address: str = Field(..., description="Address of the transaction sender")
-    receiver_address: str = Field(..., description="Address of the transaction receiver")
-    amount: float = Field(..., description="Amount to transfer", gt=0)
-    nonce: int = Field(..., description="Transaction sequence number")
-    payload: dict = Field(default_factory=dict, description="Additional transaction data (e.g., public_key)")
-    signature: str = Field(default="", description="Digital signature of the transaction")
-
-    model_config = {
-        "json_schema_extra": {
-            "example": {
-                "type_tx": "transfer",
-                "sender_address": "alice",
-                "receiver_address": "bob",
-                "amount": 10.5,
-                "nonce": 1,
-                "payload": {"public_key": "a1b2c3d4..."},
-                "signature": "sig_hash_here"
-            }
-        }
-    }
-
+# TransactionRequest and TransactionResponse use the domain Transaction model
 
 class TransactionResponse(BaseModel):
     """Successful transaction submission response."""

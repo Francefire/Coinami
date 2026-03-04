@@ -43,36 +43,81 @@ class TestTransaction:
         assert valid_tx.is_valid() is True
 
     def test_negative_amount_is_invalid(self, wallet):
-        tx = Transaction("transfer", wallet.address, "ab" * 20, -1.0, 1,
-                         {"public_key": wallet.public_key_bytes.hex()})
+        tx = Transaction(
+            type_tx="transfer",
+            sender_address=wallet.address,
+            receiver_address="ab" * 20,
+            amount=-1.0,
+            nonce=1,
+            payload={"public_key": wallet.public_key_bytes.hex()}
+        )
         tx.signature = wallet.sign_tx(tx)
         assert tx.is_valid() is False
 
     def test_zero_amount_is_invalid(self, wallet):
-        tx = Transaction("transfer", wallet.address, "ab" * 20, 0.0, 1,
-                         {"public_key": wallet.public_key_bytes.hex()})
+        tx = Transaction(
+            type_tx="transfer",
+            sender_address=wallet.address,
+            receiver_address="ab" * 20,
+            amount=0.0,
+            nonce=1,
+            payload={"public_key": wallet.public_key_bytes.hex()}
+        )
         tx.signature = wallet.sign_tx(tx)
         assert tx.is_valid() is False
 
     def test_missing_signature_is_invalid(self, wallet):
-        tx = Transaction("transfer", wallet.address, "ab" * 20, 5.0, 1,
-                         {"public_key": wallet.public_key_bytes.hex()})
+        tx = Transaction(
+            type_tx="transfer",
+            sender_address=wallet.address,
+            receiver_address="ab" * 20,
+            amount=5.0,
+            nonce=1,
+            payload={"public_key": wallet.public_key_bytes.hex()}
+        )
         assert tx.is_valid() is False
 
     def test_missing_public_key_is_invalid(self, wallet):
-        tx = Transaction("transfer", wallet.address, "ab" * 20, 5.0, 1, {})
+        tx = Transaction(
+            type_tx="transfer",
+            sender_address=wallet.address,
+            receiver_address="ab" * 20,
+            amount=5.0,
+            nonce=1,
+            payload={}
+        )
         tx.signature = "fakesig"
         assert tx.is_valid() is False
 
     def test_wrong_signature_is_invalid(self, wallet):
-        tx = Transaction("transfer", wallet.address, "ab" * 20, 5.0, 1,
-                         {"public_key": wallet.public_key_bytes.hex()})
+        tx = Transaction(
+            type_tx="transfer",
+            sender_address=wallet.address,
+            receiver_address="ab" * 20,
+            amount=5.0,
+            nonce=1,
+            payload={"public_key": wallet.public_key_bytes.hex()}
+        )
         tx.signature = "00" * 32  # signature invalide
         assert tx.is_valid() is False
 
     def test_hash_changes_when_amount_changes(self, wallet):
-        tx1 = Transaction("transfer", wallet.address, "ab" * 20, 5.0, 1, {})
-        tx2 = Transaction("transfer", wallet.address, "ab" * 20, 6.0, 1, {})
+        tx1 = Transaction(
+            type_tx="transfer",
+            sender_address=wallet.address,
+            receiver_address="ab" * 20,
+            amount=5.0,
+            nonce=1,
+            payload={}
+        )
+        tx2 = Transaction(
+            type_tx="transfer",
+            sender_address=wallet.address,
+            receiver_address="ab" * 20,
+            amount=6.0,
+            nonce=1,
+            payload={}
+        )
         assert tx1.calculate_hash() != tx2.calculate_hash()
 
     def test_to_dict_excludes_signature(self, valid_tx):
@@ -107,8 +152,14 @@ class TestBlock:
         assert block.b_header.merkle_root == valid_tx.calculate_hash()
 
     def test_merkle_root_two_txs(self, wallet, valid_tx):
-        tx2 = Transaction("transfer", wallet.address, "cd" * 20, 2.0, 2,
-                          {"public_key": wallet.public_key_bytes.hex()})
+        tx2 = Transaction(
+            type_tx="transfer",
+            sender_address=wallet.address,
+            receiver_address="cd" * 20,
+            amount=2.0,
+            nonce=2,
+            payload={"public_key": wallet.public_key_bytes.hex()}
+        )
         tx2.signature = wallet.sign_tx(tx2)
         block = Block.create("0" * 64, [valid_tx, tx2])
         assert len(block.b_header.merkle_root) == 64
@@ -183,8 +234,14 @@ class TestChain:
 
     def test_multiple_blocks_chain(self, wallet, chain):
         for i in range(3):
-            tx = Transaction("transfer", wallet.address, "ff" * 20, float(i + 1), i,
-                             {"public_key": wallet.public_key_bytes.hex()})
+            tx = Transaction(
+                type_tx="transfer",
+                sender_address=wallet.address,
+                receiver_address="ff" * 20,
+                amount=float(i + 1),
+                nonce=i,
+                payload={"public_key": wallet.public_key_bytes.hex()}
+            )
             tx.signature = wallet.sign_tx(tx)
             chain.pending_transactions.append(tx)
             chain.mine_block()
