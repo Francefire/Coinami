@@ -5,9 +5,13 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
 
+
 class Wallet:
-    def __init__(self):
-        self._private_key = ec.generate_private_key(ec.SECP256K1())
+    def __init__(self, private_key: ec.EllipticCurvePrivateKey | None = None):
+        if private_key is not None:
+            self._private_key = private_key
+        else:
+            self._private_key = ec.generate_private_key(ec.SECP256K1())
         self._public_key = self._private_key.public_key()
 
         # Clé publique sérialisée au format X962 non compressé (65 octets : 04 + x + y)
