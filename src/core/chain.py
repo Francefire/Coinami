@@ -19,7 +19,7 @@ class Chain:
             timestamp=0.0,
             nonce=0,
         )
-        return Block(header, [])
+        return Block(b_header=header, transactions=[], )
 
     @property
     def last_block(self) -> Block:

@@ -1,23 +1,18 @@
 from __future__ import annotations
 
 import time
+from pydantic import BaseModel, Field, ConfigDict
 
 from src.core.transaction import Transaction
 from src.crypto.utils import hash_data
 
 
-class BlockHeader:
-    def __init__(
-        self,
-        prev_hash: str,
-        merkle_root: str,
-        timestamp: float,
-        nonce: int = 0,
-    ):
-        self.prev_hash = prev_hash
-        self.merkle_root = merkle_root
-        self.timestamp = timestamp
-        self.nonce = nonce
+class BlockHeader(BaseModel):
+    """Pydantic model for block headers."""
+    prev_hash: str = Field(..., description="Hash of the previous block")
+    merkle_root: str = Field(..., description="Merkle root of transactions")
+    timestamp: float = Field(..., description="Timestamp when block was created")
+    nonce: int = Field(default=0, description="Proof of work nonce")
 
     def to_dict(self) -> dict:
         return {
@@ -28,10 +23,12 @@ class BlockHeader:
         }
 
 
-class Block:
-    def __init__(self, b_header: BlockHeader, transactions: list[Transaction]):
-        self.b_header = b_header
-        self.transactions = transactions
+class Block(BaseModel):
+    """Pydantic model for blockchain blocks."""
+    b_header: BlockHeader = Field(..., alias="header", description="Block header")
+    transactions: list[Transaction] = Field(default_factory=list, description="List of transactions in the block")
+
+    model_config = ConfigDict(arbitrary_types_allowed=True, populate_by_name=True)
 
     def simplified_merkle_root(self) -> str:
         """Calcule une racine de Merkle simplifiée.
@@ -66,8 +63,6 @@ class Block:
 
     @classmethod
     def from_dict(cls, data: dict) -> "Block":
-        from src.core.transaction import Transaction
-
         h = data["header"]
         header = BlockHeader(
             prev_hash=h["prev_hash"],
@@ -76,7 +71,7 @@ class Block:
             nonce=h["nonce"],
         )
         transactions = [Transaction.from_dict(t) for t in data.get("transactions", [])]
-        return cls(header, transactions)
+        return cls(b_header=header, transactions=transactions)
 
     @classmethod
     def create(cls, prev_hash: str, transactions: list[Transaction]) -> "Block":
@@ -87,6 +82,6 @@ class Block:
             timestamp=time.time(),
             nonce=0,
         )
-        block = cls(header, transactions)
+        block = cls(b_header=header, transactions=transactions)
         block.b_header.merkle_root = block.simplified_merkle_root()
         return block

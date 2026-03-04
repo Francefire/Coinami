@@ -176,11 +176,6 @@ async def post_transaction(
     - Signature must be valid
     - Transaction must not have been received before
     """
-    try:
-        tx = Transaction.from_dict(tx_data.model_dump())
-    except (KeyError, TypeError, ValueError) as exc:
-        raise HTTPException(status_code=422, detail=f"Invalid transaction format: {str(exc)}")
-
     accepted = node.receive_tx(tx)
     if not accepted:
         raise HTTPException(status_code=400, detail="Transaction invalid or already received")
@@ -191,13 +186,8 @@ async def post_transaction(
 
 
 @app.post("/block", status_code=201, response_model=BlockResponse, tags=["Blocks"])
-async def post_block(block_data: BlockRequest) -> BlockResponse:
+async def post_block(block: Block) -> BlockResponse:
     """Submit a newly mined block to the chain with validation and broadcast."""
-    try:
-        block = Block.from_dict(block_data.data)
-    except (KeyError, TypeError, ValueError) as exc:
-        raise HTTPException(status_code=422, detail=f"Invalid block format: {str(exc)}")
-
     accepted = node.receive_block(block)
     if not accepted:
         raise HTTPException(status_code=400, detail="Block invalid or already received")
