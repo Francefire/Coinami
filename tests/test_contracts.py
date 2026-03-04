@@ -19,7 +19,14 @@ def state():
 def make_tx(type_tx, sender, receiver, amount, nonce=1, extra_payload=None):
     payload = extra_payload or {}
     payload.setdefault("public_key", "aabbcc")
-    return Transaction(type_tx, sender, receiver, amount, nonce, payload)
+    return Transaction(
+        type_tx=type_tx,
+        sender_address=sender,
+        receiver_address=receiver,
+        amount=amount,
+        nonce=nonce,
+        payload=payload
+    )
 
 
 # ---------------------------------------------------------------------------

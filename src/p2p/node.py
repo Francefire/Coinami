@@ -12,8 +12,8 @@ from src.core.block import Block
 from src.core.chain import Chain
 from src.core.transaction import Transaction
 from src.p2p.schemas import (
-    TransactionRequest, TransactionResponse,
-    BlockRequest, BlockResponse,
+    TransactionResponse,
+    BlockResponse,
     PeersRequest, PeersResponse, PeersListResponse,
     MempoolResponse,
     StateResponse,
@@ -160,7 +160,7 @@ app = FastAPI(title="Coinami Node", lifespan=lifespan)
 
 @app.post("/tx", status_code=201, response_model=TransactionResponse, tags=["Transactions"])
 async def post_transaction(
-    tx_data: TransactionRequest
+    tx: Transaction
 ) -> TransactionResponse:
     """
     Submit a new transaction to the mempool.

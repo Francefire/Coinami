@@ -1,27 +1,19 @@
 from __future__ import annotations
 
+from pydantic import BaseModel, Field
 from src.crypto.utils import hash_data
 from src.crypto.wallet import Wallet
 
 
-class Transaction:
-    def __init__(
-        self,
-        type_tx: str,
-        sender_address: str,
-        receiver_address: str,
-        amount: float,
-        nonce: int,
-        payload: dict | None = None,
-        signature: str = "",
-    ):
-        self.type_tx = type_tx
-        self.sender_address = sender_address
-        self.receiver_address = receiver_address
-        self.amount = amount
-        self.nonce = nonce
-        self.payload = payload or {}
-        self.signature = signature
+class Transaction(BaseModel):
+    """Pydantic model for blockchain transactions."""
+    type_tx: str = Field(..., description="Transaction type (e.g., 'transfer')")
+    sender_address: str = Field(..., description="Address of the transaction sender")
+    receiver_address: str = Field(..., description="Address of the transaction receiver")
+    amount: float = Field(..., description="Amount to transfer")
+    nonce: int = Field(..., description="Transaction sequence number")
+    payload: dict = Field(default_factory=dict, description="Additional transaction data (e.g., public_key)")
+    signature: str = Field(default="", description="Digital signature of the transaction")
 
     def to_dict(self) -> dict:
         """Sérialise la transaction SANS la signature (utilisé pour le hachage)."""
