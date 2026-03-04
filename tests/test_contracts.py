@@ -90,11 +90,25 @@ class TestReleaseEscrow:
                          extra_payload={"escrow_id": "e1"})
         state.execute_tx(create)
 
-        release = make_tx("release_escrow", "alice", "bob", 0,
+        # Receiver (bob) releases the escrow.
+        release = make_tx("release_escrow", "bob", "alice", 0,
                           extra_payload={"escrow_id": "e1"})
         assert state.execute_tx(release) is True
         assert state.get_balance("bob") == 20.0
         assert state.escrow["e1"]["status"] == "released"
+
+    def test_sender_cannot_release_own_escrow(self, state):
+        create = make_tx("create_escrow", "alice", "bob", 20.0,
+                         extra_payload={"escrow_id": "e1"})
+        state.execute_tx(create)
+
+        # Sender (alice) must not be allowed to release.
+        sender_release = make_tx("release_escrow", "alice", "bob", 0,
+                                 extra_payload={"escrow_id": "e1"})
+        assert state.execute_tx(sender_release) is False
+        assert state.get_balance("alice") == 80.0
+        assert state.get_balance("bob") == 0.0
+        assert state.escrow["e1"]["status"] == "locked"
 
     def test_release_nonexistent_escrow(self, state):
         tx = make_tx("release_escrow", "alice", "bob", 0,
@@ -105,7 +119,7 @@ class TestReleaseEscrow:
         create = make_tx("create_escrow", "alice", "bob", 20.0,
                          extra_payload={"escrow_id": "e1"})
         state.execute_tx(create)
-        release = make_tx("release_escrow", "alice", "bob", 0,
+        release = make_tx("release_escrow", "bob", "alice", 0,
                           extra_payload={"escrow_id": "e1"})
         state.execute_tx(release)
         assert state.execute_tx(release) is False
@@ -136,7 +150,7 @@ class TestCancelEscrow:
         create = make_tx("create_escrow", "alice", "bob", 10.0,
                          extra_payload={"escrow_id": "e1"})
         state.execute_tx(create)
-        release = make_tx("release_escrow", "alice", "bob", 0,
+        release = make_tx("release_escrow", "bob", "alice", 0,
                           extra_payload={"escrow_id": "e1"})
         state.execute_tx(release)
 
