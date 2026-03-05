@@ -7,9 +7,13 @@ from cryptography.hazmat.primitives.asymmetric import ec
 
 
 class Wallet:
-    def __init__(self, private_key: ec.EllipticCurvePrivateKey | None = None):
+    def __init__(self, private_key: ec.EllipticCurvePrivateKey | None = None, private_key_hex: str | None = None):
         if private_key is not None:
             self._private_key = private_key
+        elif private_key_hex is not None:
+            # Reconstruct the private key from hex
+            private_value = int(private_key_hex, 16)
+            self._private_key = ec.derive_private_key(private_value, ec.SECP256K1())
         else:
             self._private_key = ec.generate_private_key(ec.SECP256K1())
         self._public_key = self._private_key.public_key()
@@ -27,6 +31,11 @@ class Wallet:
     def _derive_address(public_key_bytes: bytes) -> str:
         digest = hashlib.sha256(public_key_bytes).digest()
         return digest[-20:].hex()
+
+    def export_private_key(self) -> str:
+        """Exporte la clé privée en format hexadécimal (64 caractères)."""
+        private_value = self._private_key.private_numbers().private_value
+        return hex(private_value)[2:].zfill(64)
 
     def sign_tx(self, tx) -> str:
         """Signe le hash d'une transaction et retourne la signature en hexadécimal."""
