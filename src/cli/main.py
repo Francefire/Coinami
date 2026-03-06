@@ -19,6 +19,10 @@ def main():
     parser_send.add_argument("--amount", required=True, type=float, help="Montant à envoyer")
     parser_send.add_argument("--node-url", help="URL optionnelle du nœud")
 
+    # Commande claim
+    parser_claim = subparsers.add_parser("claim", help="Réclamer 50 tokens quotidiens")
+    parser_claim.add_argument("--node-url", help="URL optionnelle du nœud")
+
     args = parser.parse_args()
     
     controller = CLI_Controller()
@@ -29,6 +33,8 @@ def main():
         controller.balance_cmd(node_url=args.node_url)
     elif args.command == "send":
         controller.send_cmd(to=args.to, amount=args.amount, node_url=args.node_url)
+    elif args.command == "claim":
+        controller.claim_cmd(node_url=args.node_url)
     else:
         parser.print_help()
 
