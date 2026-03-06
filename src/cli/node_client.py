@@ -31,3 +31,22 @@ class NodeClient:
             raise ValueError(f"Erreur HTTP lors de l'envoi : {e.response.text}")
         except Exception as e:
             raise ConnectionError(f"Erreur de communication avec le nœud : {e}")
+
+    def claim_tokens(self, tx: Transaction, custom_url: str | None = None) -> tuple[str, float]:
+        """Envoie une transaction de claim au nœud via l'endpoint dédié /claim.
+
+        Returns:
+            Tuple (tx_hash, new_balance)
+        """
+        url = (custom_url or self.default_node_url).rstrip("/")
+        try:
+            with httpx.Client(timeout=10.0) as client:
+                response = client.post(f"{url}/claim", json=tx.to_network_dict())
+                if response.status_code != 200:
+                    raise ValueError(f"Le nœud a rejeté le claim : {response.text}")
+                data = response.json()
+                return data["hash"], data["balance"]
+        except httpx.HTTPStatusError as e:
+            raise ValueError(f"Erreur HTTP lors du claim : {e.response.text}")
+        except Exception as e:
+            raise ConnectionError(f"Erreur de communication avec le nœud : {e}")

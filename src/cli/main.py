@@ -23,6 +23,9 @@ def main():
     parser_claim = subparsers.add_parser("claim", help="Réclamer 50 tokens quotidiens")
     parser_claim.add_argument("--node-url", help="URL optionnelle du nœud")
 
+    # Commande export-key
+    subparsers.add_parser("export-key", help="Afficher la clé privée en clair")
+
     args = parser.parse_args()
     
     controller = CLI_Controller()
@@ -35,6 +38,8 @@ def main():
         controller.send_cmd(to=args.to, amount=args.amount, node_url=args.node_url)
     elif args.command == "claim":
         controller.claim_cmd(node_url=args.node_url)
+    elif args.command == "export-key":
+        controller.export_key_cmd()
     else:
         parser.print_help()
 

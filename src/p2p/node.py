@@ -21,6 +21,7 @@ from src.p2p.schemas import (
     ChainResponse,
     MineResponse,
     SyncResponse,
+    ClaimResponse,
 )
 
 
@@ -186,6 +187,7 @@ async def post_transaction(
     - Signature must be valid
     - Transaction must not have been received before
     """
+    print(f"Received transaction from {tx.sender_address} to {tx.receiver_address} for amount {tx.amount}")
     accepted = node.receive_tx(tx)
     if not accepted:
         raise HTTPException(status_code=400, detail="Transaction invalid or already received")
@@ -271,6 +273,29 @@ def get_state() -> StateResponse:
     return StateResponse(
         balances=node.state.balances,
         escrow=node.state.escrow
+    )
+
+
+@app.post("/claim", status_code=200, response_model=ClaimResponse, tags=["Transactions"])
+async def post_claim(tx: Transaction) -> ClaimResponse:
+    """
+    Submit a daily claim for 50 COIN tokens.
+
+    This endpoint immediately validates and executes the claim:
+    - Transaction must have type_tx='claim', amount=50.0, sender==receiver
+    - Signature must be valid
+    - 24-hour cooldown must have passed since the last claim
+    """
+    if tx.type_tx != "claim" or tx.amount != 50.0 or tx.sender_address != tx.receiver_address:
+        raise HTTPException(status_code=400, detail="Invalid claim transaction")
+    if not tx.is_valid():
+        raise HTTPException(status_code=400, detail="Invalid signature")
+    if not node.state.execute_tx(tx):
+        raise HTTPException(status_code=400, detail="Claim rejected: 24-hour cooldown has not passed")
+    return ClaimResponse(
+        status="claimed",
+        hash=tx.calculate_hash(),
+        balance=node.state.get_balance(tx.sender_address),
     )
 
 

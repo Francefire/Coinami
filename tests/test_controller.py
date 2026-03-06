@@ -38,10 +38,10 @@ def test_controller_claim_success(mock_keystore, capsys):
          patch.object(controller.keystore, "load_wallet", return_value=wallet), \
          patch.object(controller.keystore, "get_last_nonce", return_value=7), \
          patch.object(controller.keystore, "update_nonce") as mock_update_nonce, \
-         patch.object(controller.node_client, "broadcast_transaction", return_value="0xclaimhash") as mock_broadcast:
+         patch.object(controller.node_client, "claim_tokens", return_value=("0xclaimhash", 50.0)) as mock_claim:
         controller.claim_cmd()
 
-    tx_sent = mock_broadcast.call_args.args[0]
+    tx_sent = mock_claim.call_args.args[0]
     assert isinstance(tx_sent, Transaction)
     assert tx_sent.type_tx == "claim"
     assert tx_sent.sender_address == wallet.address

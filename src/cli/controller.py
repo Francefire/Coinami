@@ -70,6 +70,18 @@ class CLI_Controller:
         except Exception as e:
             print(f"Erreur inattendue : {e}")
 
+    def export_key_cmd(self):
+        """Affiche la clé privée en clair après vérification de la passphrase."""
+        try:
+            passphrase = getpass.getpass("Entrez votre passphrase pour déverrouiller la clé : ")
+            wallet = self.keystore.load_wallet(passphrase)
+            print(f"⚠️  Ne partagez jamais cette clé privée !")
+            print(f"Clé privée : {wallet.export_private_key()}")
+        except FileNotFoundError:
+            print("Erreur : Aucun wallet trouvé. Utilisez 'init' d'abord.")
+        except ValueError as e:
+            print(f"Erreur : {e}")
+
     def claim_cmd(self, node_url: str | None = None):
         """Réclame 50 tokens quotidiens (une fois par 24h)."""
         try:
@@ -90,14 +102,15 @@ class CLI_Controller:
             # Signature
             tx.signature = wallet.sign_tx(tx)
             
-            # Envoi
-            tx_hash = self.node_client.broadcast_transaction(tx, custom_url=node_url)
+            # Envoi via l'endpoint dédié /claim
+            tx_hash, new_balance = self.node_client.claim_tokens(tx, custom_url=node_url)
             
             # Mise à jour du nonce locale si succès
             self.keystore.update_nonce(nonce + 1)
             
             print(f"✓ Succès ! 50 tokens réclamés.")
             print(f"Hash : {tx_hash}")
+            print(f"Nouveau solde : {new_balance} COIN")
             
         except FileNotFoundError:
             print("Erreur : Aucun wallet trouvé. Utilisez 'init' d'abord.")

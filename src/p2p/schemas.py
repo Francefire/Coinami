@@ -109,3 +109,14 @@ class SyncResponse(BaseModel):
     """Response for chain synchronization."""
     status: str = Field(description="Status: 'synced'")
     length: int = Field(description="Current chain length after sync")
+
+
+# ============================================================================
+# Claim Models
+# ============================================================================
+
+class ClaimResponse(BaseModel):
+    """Response for a daily claim request."""
+    status: str = Field(description="Status: 'claimed'")
+    hash: str = Field(description="Hash of the claim transaction")
+    balance: float = Field(description="Updated balance after claiming")
