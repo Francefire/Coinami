@@ -52,7 +52,7 @@ def test_controller_claim_success(mock_keystore, capsys):
     mock_update_nonce.assert_called_once_with(8)
 
     captured = capsys.readouterr()
-    assert "50 tokens réclamés" in captured.out
+    assert "Claim accepté" in captured.out
     assert "0xclaimhash" in captured.out
 
 

@@ -161,6 +161,8 @@ class TestSSEEndpoint:
         from src.core.transaction import Transaction
 
         w = Wallet()
+        # Fund the sender so the transfer passes contract validation at mining time
+        node_module.node.state.balances[w.address] = 100.0
         tx = Transaction(
             type_tx="transfer",
             sender_address=w.address,
