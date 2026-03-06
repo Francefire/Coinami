@@ -22,6 +22,7 @@ from src.p2p.schemas import (
     MineResponse,
     SyncResponse,
     ClaimResponse,
+    NonceResponse,
 )
 
 
@@ -297,6 +298,25 @@ async def post_claim(tx: Transaction) -> ClaimResponse:
         hash=tx.calculate_hash(),
         balance=node.state.get_balance(tx.sender_address),
     )
+
+
+@app.get("/nonce/{address}", response_model=NonceResponse, tags=["Transactions"])
+def get_nonce(address: str) -> NonceResponse:
+    """
+    Return the next nonce to use for a transaction from this address.
+
+    Counts confirmed transactions across the whole chain plus any
+    pending transactions already in the mempool, so the client can
+    build and sign a transaction without risk of nonce collision.
+    """
+    confirmed = sum(
+        1
+        for block in node.chain.blocks
+        for tx in block.transactions
+        if tx.sender_address == address
+    )
+    pending = sum(1 for tx in node.mempool if tx.sender_address == address)
+    return NonceResponse(address=address, nonce=confirmed + pending)
 
 
 @app.post("/sync", response_model=SyncResponse, tags=["Sync"])

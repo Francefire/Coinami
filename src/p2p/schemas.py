@@ -61,6 +61,16 @@ class PeersListResponse(BaseModel):
 
 
 # ============================================================================
+# Nonce Models
+# ============================================================================
+
+class NonceResponse(BaseModel):
+    """Current nonce for an address — used by clients before building a transaction."""
+    address: str = Field(description="The queried address")
+    nonce: int = Field(description="Number of confirmed + pending transactions sent from this address")
+
+
+# ============================================================================
 # Mempool Models
 # ============================================================================
 
