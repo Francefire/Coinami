@@ -56,8 +56,10 @@ class Block(BaseModel):
 
     def to_network_dict(self) -> dict:
         """Sérialise le bloc entier (header + transactions) pour envoi réseau."""
+        header_dict = self.b_header.to_dict()
+        header_dict["hash"] = self.calculate_hash()
         return {
-            "header": self.b_header.to_dict(),
+            "header": header_dict,
             "transactions": [tx.to_network_dict() for tx in self.transactions],
         }
 
