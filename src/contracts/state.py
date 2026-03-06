@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from src.core.transaction import Transaction
 
 
@@ -9,6 +10,8 @@ class State:
         self.balances: dict[str, float] = {}
         # { escrow_id: { "sender": str, "receiver": str, "amount": float, "status": str } }
         self.escrow: dict[str, dict] = {}
+        # { address: timestamp } - tracks last claim time for daily token rewards
+        self.last_claims: dict[str, float] = {}
 
     def get_balance(self, address: str) -> float:
         return self.balances.get(address, 0.0)
@@ -29,6 +32,7 @@ class State:
             "create_escrow": self._handle_create_escrow,
             "release_escrow": self._handle_release_escrow,
             "cancel_escrow": self._handle_cancel_escrow,
+            "claim": self._handle_claim,
         }
 
         handler = dispatch.get(tx.type_tx)
@@ -108,4 +112,36 @@ class State:
             self.get_balance(entry["sender"]) + entry["amount"]
         )
         entry["status"] = "refunded"
+        return True
+
+    def _handle_claim(self, tx: Transaction) -> bool:
+        """Distributes 50 daily tokens to the sender.
+
+        Validates:
+        - Amount is exactly 50.0
+        - Sender and receiver are the same address
+        - At least 24 hours (86400 seconds) have passed since last claim
+
+        Mints new tokens (no balance deduction).
+        """
+        # Validate amount is 50
+        if tx.amount != 50.0:
+            return False
+        
+        # Validate sender == receiver (claim to self)
+        if tx.sender_address != tx.receiver_address:
+            return False
+        
+        # Check 24-hour cooldown
+        current_time = time.time()
+        last_claim = self.last_claims.get(tx.sender_address, 0)
+        time_since_last_claim = current_time - last_claim
+        
+        # 86400 seconds = 24 hours
+        if time_since_last_claim < 86400:
+            return False
+        
+        # Mint tokens and update claim timestamp
+        self.balances[tx.sender_address] = self.get_balance(tx.sender_address) + 50.0
+        self.last_claims[tx.sender_address] = current_time
         return True

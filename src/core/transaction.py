@@ -54,9 +54,17 @@ class Transaction(BaseModel):
         - Le montant doit être strictement positif.
         - La signature doit être présente et vérifiable via la clé publique
           stockée dans payload["public_key"] (hex de la clé X962).
+        - Pour les transactions "claim" : montant doit être 50.0 et sender == receiver.
         """
         if self.amount <= 0:
             return False
+        
+        # Additional validation for claim transactions
+        if self.type_tx == "claim":
+            if self.amount != 50.0:
+                return False
+            if self.sender_address != self.receiver_address:
+                return False
 
         public_key_hex = self.payload.get("public_key")
         if not public_key_hex or not self.signature:
