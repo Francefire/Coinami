@@ -83,3 +83,4 @@ dmypy.json
 
 # Pyright
 pyrightconfig.json
+wallet.json
