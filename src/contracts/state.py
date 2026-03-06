@@ -114,6 +114,11 @@ class State:
         entry["status"] = "refunded"
         return True
 
+    def can_claim(self, address: str) -> bool:
+        """Read-only check: has 24 h passed since the last claim for *address*?"""
+        last_claim = self.last_claims.get(address, 0)
+        return (time.time() - last_claim) >= 86400
+
     def _handle_claim(self, tx: Transaction) -> bool:
         """Distributes 50 daily tokens to the sender.
 

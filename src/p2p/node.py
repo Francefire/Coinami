@@ -108,7 +108,8 @@ class Node:
         # Mettre à jour l'état avec les transactions confirmées
         confirmed_hashes = []
         for tx in block.transactions:
-            self.state.execute_tx(tx)
+            if not self.state.execute_tx(tx):
+                self.events.emit("tx:execution_failed", {"hash": tx.calculate_hash(), "type": tx.type_tx})
             confirmed_hashes.append(tx.calculate_hash())
 
         self.events.emit("state:updated", {"confirmed_tx": len(block.transactions)})
@@ -274,12 +275,26 @@ async def mine() -> MineResponse:
 
     node.events.emit("block:mining_started", {"mempool_size": len(node.mempool)})
 
-    node.chain.pending_transactions = list(node.mempool)
-    block = node.chain.mine_block()
-    node.mempool = []
+    # Only include transactions whose contract conditions are satisfied
+    valid_txs = []
+    rejected_txs = []
+    for tx in node.mempool:
+        if node.state.execute_tx(tx):
+            valid_txs.append(tx)
+        else:
+            rejected_txs.append(tx)
 
-    for tx in block.transactions:
-        node.state.execute_tx(tx)
+    if not valid_txs:
+        node.mempool = []
+        raise HTTPException(status_code=400, detail="No valid transactions to mine")
+
+    # Drop rejected txs from the mempool, keep any that arrived mid-mining
+    rejected_hashes = {tx.calculate_hash() for tx in rejected_txs}
+    node.mempool = [tx for tx in node.mempool if tx.calculate_hash() not in rejected_hashes
+                    and tx.calculate_hash() not in {t.calculate_hash() for t in valid_txs}]
+
+    node.chain.pending_transactions = valid_txs
+    block = node.chain.mine_block()
 
     block_dict = block.to_network_dict()
     block_hash = block.calculate_hash()
@@ -335,18 +350,23 @@ async def post_claim(tx: Transaction) -> ClaimResponse:
     if not tx.is_valid():
         node.events.emit("claim:rejected", {"hash": tx_hash, "reason": "invalid signature"})
         raise HTTPException(status_code=400, detail="Invalid signature")
-    if not node.state.execute_tx(tx):
+    if not node.state.can_claim(tx.sender_address):
         node.events.emit("claim:rejected", {"hash": tx_hash, "reason": "24h cooldown not passed"})
         raise HTTPException(status_code=400, detail="Claim rejected: 24-hour cooldown has not passed")
 
-    balance = node.state.get_balance(tx.sender_address)
-    node.events.emit("claim:validated", {"hash": tx_hash, "address": tx.sender_address, "new_balance": balance})
-    node.events.emit("state:updated", {"reason": "claim executed"})
+    # Add to mempool — actual execution happens at mining time
+    accepted = node.receive_tx(tx)
+    if not accepted:
+        raise HTTPException(status_code=400, detail="Claim already submitted or invalid")
+
+    await node.broadcast_tx(tx.to_network_dict())
+
+    node.events.emit("claim:validated", {"hash": tx_hash, "address": tx.sender_address})
 
     return ClaimResponse(
-        status="claimed",
+        status="accepted",
         hash=tx_hash,
-        balance=balance,
+        balance=node.state.get_balance(tx.sender_address),
     )
 
 

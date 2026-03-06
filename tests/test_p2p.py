@@ -31,6 +31,9 @@ def wallet():
 
 @pytest.fixture
 def valid_tx(wallet):
+    # Fund the sender so the transfer is valid at mining time
+    node_module.node.state.balances[wallet.address] = 100.0
+
     tx = Transaction(
         type_tx="transfer",
         sender_address=wallet.address,

@@ -108,9 +108,9 @@ class CLI_Controller:
             # Mise à jour du nonce locale si succès
             self.keystore.update_nonce(nonce + 1)
             
-            print(f"✓ Succès ! 50 tokens réclamés.")
+            print(f"✓ Claim accepté et ajouté au mempool (sera miné dans le prochain bloc).")
             print(f"Hash : {tx_hash}")
-            print(f"Nouveau solde : {new_balance} COIN")
+            print(f"Solde actuel : {new_balance} COIN")
             
         except FileNotFoundError:
             print("Erreur : Aucun wallet trouvé. Utilisez 'init' d'abord.")
