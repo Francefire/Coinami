@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 import httpx
 import uvicorn
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 
 from src.contracts.state import State
 from src.core.block import Block
@@ -156,6 +157,15 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Coinami Node", lifespan=lifespan)
+
+# Add CORS middleware to handle preflight requests from frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all origins (can be restricted in production)
+    allow_credentials=True,
+    allow_methods=["*"],  # Allow all methods (GET, POST, OPTIONS, etc.)
+    allow_headers=["*"],  # Allow all headers
+)
 
 
 @app.post("/tx", status_code=201, response_model=TransactionResponse, tags=["Transactions"])
