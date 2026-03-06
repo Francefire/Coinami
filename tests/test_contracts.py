@@ -187,6 +187,52 @@ class TestCancelEscrow:
         assert state.escrow["e1"]["status"] == "refunded"
 
 
+# ---------------------------------------------------------------------------
+# Claim
+# ---------------------------------------------------------------------------
+
+class TestClaim:
+    def test_first_claim_mints_50_tokens(self, state):
+        tx = make_tx("claim", "bob", "bob", 50.0)
+        assert state.execute_tx(tx) is True
+        assert state.get_balance("bob") == 50.0
+        assert "bob" in state.last_claims
+
+    def test_second_claim_before_24h_is_rejected(self, state, monkeypatch):
+        base_time = 1_000_000.0
+        monkeypatch.setattr("src.contracts.state.time.time", lambda: base_time)
+
+        tx1 = make_tx("claim", "bob", "bob", 50.0)
+        assert state.execute_tx(tx1) is True
+
+        # 1 hour later: still inside cooldown window.
+        monkeypatch.setattr("src.contracts.state.time.time", lambda: base_time + 3600)
+        tx2 = make_tx("claim", "bob", "bob", 50.0, nonce=2)
+        assert state.execute_tx(tx2) is False
+        assert state.get_balance("bob") == 50.0
+
+    def test_claim_after_24h_is_allowed(self, state, monkeypatch):
+        base_time = 2_000_000.0
+        monkeypatch.setattr("src.contracts.state.time.time", lambda: base_time)
+
+        tx1 = make_tx("claim", "bob", "bob", 50.0)
+        assert state.execute_tx(tx1) is True
+
+        # Exactly 24 hours later is accepted.
+        monkeypatch.setattr("src.contracts.state.time.time", lambda: base_time + 86400)
+        tx2 = make_tx("claim", "bob", "bob", 50.0, nonce=2)
+        assert state.execute_tx(tx2) is True
+        assert state.get_balance("bob") == 100.0
+
+    def test_claim_rejected_if_not_self_or_not_50(self, state):
+        wrong_receiver = make_tx("claim", "bob", "alice", 50.0)
+        wrong_amount = make_tx("claim", "bob", "bob", 10.0, nonce=2)
+
+        assert state.execute_tx(wrong_receiver) is False
+        assert state.execute_tx(wrong_amount) is False
+        assert state.get_balance("bob") == 0.0
+
+
 def test_get_balance_unknown_address_is_zero():
     state = State()
     assert state.get_balance("nobody") == 0.0
