@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Coinami Light Wallet</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/elliptic/6.5.4/elliptic.min.js"></script>
+</head>
+<body class="bg-gray-100 text-gray-800 font-sans min-h-screen">
+    <div id="app" class="container mx-auto p-4 max-w-6xl">
+        <header class="bg-white rounded-lg shadow-md p-6 mb-6 flex flex-wrap justify-between items-center gap-4">
+            <div>
+                <h1 class="text-3xl font-bold text-blue-600">Coinami Wallet</h1>
+                <p class="text-sm text-gray-500">In-Memory Light Node Client</p>
+            </div>
+            <div class="flex items-center gap-2">
+                <label class="font-semibold text-gray-700">Node URL:</label>
+                <input v-model="nodeUrl" type="text" class="border rounded px-3 py-1 w-64 focus:outline-blue-500" placeholder="http://localhost:5000">
+                <button @click="forceRefresh" class="bg-blue-100 text-blue-700 px-3 py-1 rounded hover:bg-blue-200 transition">Refresh Data</button>
+            </div>
+        </header>
+
+        <section class="bg-white rounded-lg shadow-md p-6 mb-6 border-t-4 border-blue-500">
+            <div class="flex justify-between items-start mb-4">
+                <h2 class="text-xl font-bold">Wallet Identity</h2>
+                <div v-if="wallet.address" class="text-right">
+                    <p class="text-sm text-gray-500">Balance</p>
+                    <p class="text-3xl font-bold text-green-600">{{ balance }} COIN</p>
+                </div>
+            </div>
+            
+            <div v-if="!wallet.privateKeyHex" class="flex gap-4">
+                <button @click="generateWallet" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition">
+                    Generate New Wallet
+                </button>
+                <p class="text-sm text-gray-500 flex items-center">Keys are kept entirely in memory and will be lost on refresh.</p>
+            </div>
+            <div v-else class="space-y-2">
+                <p><span class="font-semibold w-24 inline-block">Address:</span> <span class="font-mono text-sm bg-gray-100 px-2 py-1 rounded break-all">{{ wallet.address }}</span></p>
+                <p><span class="font-semibold w-24 inline-block">Public Key:</span> <span class="font-mono text-sm text-gray-600 break-all">{{ wallet.publicKeyHex }}</span></p>
+                <p><span class="font-semibold w-24 inline-block">Nonce:</span> <span class="font-mono text-sm text-gray-600">{{ wallet.nonce }}</span></p>
+            </div>
+        </section>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div class="space-y-6">
+                <section class="bg-white rounded-lg shadow-md p-6" :class="{'opacity-50 pointer-events-none': !wallet.address}">
+                    <h2 class="text-xl font-bold mb-4">Actions</h2>
+                    
+                    <div class="mb-6 pb-6 border-b">
+                        <h3 class="font-semibold mb-2">Daily Claim</h3>
+                        <p class="text-sm text-gray-600 mb-2">Mint 50 COIN to your address (24h cooldown).</p>
+                        <button @click="claimTokens" class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 transition w-full">Claim 50 COIN</button>
+                    </div>
+
+                    <div class="mb-6 pb-6 border-b">
+                        <h3 class="font-semibold mb-2">Transfer Funds</h3>
+                        <div class="space-y-3">
+                            <input v-model="transferForm.to" type="text" placeholder="Receiver Address (40 hex chars)" class="border rounded px-3 py-2 w-full font-mono text-sm">
+                            <input v-model.number="transferForm.amount" type="number" step="0.1" placeholder="Amount" class="border rounded px-3 py-2 w-full">
+                            <button @click="submitTransfer" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition w-full">Send Transfer</button>
+                        </div>
+                    </div>
+
+                    <div>
+                        <h3 class="font-semibold mb-2">Create Escrow</h3>
+                        <div class="space-y-3">
+                            <input v-model="escrowForm.id" type="text" placeholder="Unique Escrow ID" class="border rounded px-3 py-2 w-full">
+                            <input v-model="escrowForm.to" type="text" placeholder="Receiver Address" class="border rounded px-3 py-2 w-full font-mono text-sm">
+                            <input v-model.number="escrowForm.amount" type="number" step="0.1" placeholder="Amount" class="border rounded px-3 py-2 w-full">
+                            <button @click="submitCreateEscrow" class="bg-purple-500 text-white px-4 py-2 rounded hover:bg-purple-600 transition w-full">Lock in Escrow</button>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="bg-white rounded-lg shadow-md p-6" :class="{'opacity-50 pointer-events-none': !wallet.address}">
+                    <h2 class="text-xl font-bold mb-4">My Escrow Contracts</h2>
+                    <div v-if="myEscrows.length === 0" class="text-gray-500 text-sm italic">No active escrows involving your address.</div>
+                    <div v-else class="space-y-4">
+                        <div v-for="[id, esc] in myEscrows" :key="id" class="border rounded p-3 bg-gray-50 relative">
+                            <span class="absolute top-2 right-2 text-xs font-bold px-2 py-1 rounded" 
+                                :class="esc.status === 'locked' ? 'bg-yellow-200 text-yellow-800' : (esc.status === 'released' ? 'bg-green-200 text-green-800' : 'bg-gray-200 text-gray-800')">
+                                {{ esc.status.toUpperCase() }}
+                            </span>
+                            <p class="font-mono text-sm font-bold text-blue-800 mb-1">ID: {{ id }}</p>
+                            <p class="text-sm"><span class="font-semibold">Role:</span> {{ esc.sender === wallet.address ? 'Sender' : 'Receiver' }}</p>
+                            <p class="text-sm"><span class="font-semibold">Amount:</span> {{ esc.amount }} COIN</p>
+                            <p class="text-xs text-gray-500 truncate mt-1">Sender: {{ esc.sender }}</p>
+                            <p class="text-xs text-gray-500 truncate">Receiver: {{ esc.receiver }}</p>
+                            
+                            <div v-if="esc.status === 'locked'" class="mt-3 flex gap-2">
+                                <button v-if="esc.receiver === wallet.address" @click="actionEscrow('release_escrow', id)" class="flex-1 bg-green-500 text-white px-2 py-1 rounded text-sm hover:bg-green-600 transition">Release Funds</button>
+                                <button @click="actionEscrow('cancel_escrow', id)" class="flex-1 bg-red-500 text-white px-2 py-1 rounded text-sm hover:bg-red-600 transition">Cancel / Refund</button>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+
+            <div class="space-y-6">
+                <section class="bg-white rounded-lg shadow-md p-6">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-xl font-bold">Network Controls</h2>
+                    </div>
+                    <div class="flex gap-4 mb-4">
+                        <button @click="mineBlock" class="flex-1 bg-yellow-500 text-white font-bold px-4 py-3 rounded shadow hover:bg-yellow-600 transition flex items-center justify-center gap-2">
+                            <span>⛏️</span> Mine Pending Block
+                        </button>
+                        <button @click="syncChain" class="flex-1 bg-blue-500 text-white font-bold px-4 py-3 rounded shadow hover:bg-blue-600 transition flex items-center justify-center gap-2">
+                            <span>🔄</span> Sync Chain
+                        </button>
+                    </div>
+                </section>
+
+                <section class="bg-white rounded-lg shadow-md p-6">
+                    <h2 class="text-xl font-bold mb-4">Mempool <span class="text-sm font-normal text-gray-500 ml-2">({{ mempool.length }} pending)</span></h2>
+                    <div v-if="mempool.transactions.length === 0" class="text-gray-500 text-sm italic">No pending transactions.</div>
+                    <div class="space-y-2 max-h-64 overflow-y-auto">
+                        <div v-for="(tx, idx) in mempool.transactions" :key="idx" class="border rounded p-2 text-xs bg-gray-50">
+                            <span class="font-bold text-blue-600 uppercase">{{ tx.type_tx }}</span> - {{ tx.amount }} COIN
+                            <div class="text-gray-500 truncate mt-1">From: <span class="font-mono">{{ tx.sender_address }}</span></div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="bg-white rounded-lg shadow-md p-6">
+                    <h2 class="text-xl font-bold mb-4">Block Explorer <span class="text-sm font-normal text-gray-500 ml-2">(Height: {{ chain.length }})</span></h2>
+                    <div class="space-y-4 max-h-[500px] overflow-y-auto pr-2">
+                        <div v-for="(block, idx) in chain.blocks.slice().reverse()" :key="idx" class="border-l-4 border-blue-500 bg-gray-50 p-4 rounded-r shadow-sm">
+                            <div class="flex justify-between items-start mb-2">
+                                <h3 class="font-bold">Block #{{ chain.blocks.length - 1 - idx }}</h3>
+                                <span class="text-xs bg-gray-200 px-2 py-1 rounded text-gray-600">{{ new Date(block.header.timestamp * 1000).toLocaleString() }}</span>
+                            </div>
+                            <p class="text-xs font-mono truncate text-gray-500 mb-1" title="Prev Hash">Prev: {{ block.header.prev_hash }}</p>
+                            <p class="text-xs font-mono truncate text-gray-500 mb-2" title="Merkle Root">Root: {{ block.header.merkle_root }}</p>
+                            <p class="text-sm"><span class="font-semibold">{{ block.transactions.length }}</span> transaction(s)</p>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </div>
+
+        <div v-if="notification.message" class="fixed bottom-4 right-4 text-white px-6 py-3 rounded shadow-lg transition-all" 
+            :class="notification.type === 'error' ? 'bg-red-500' : 'bg-green-500'">
+            {{ notification.message }}
+        </div>
+    </div>
+
+    <script>
+        const { createApp, ref, computed, onMounted, onUnmounted } = Vue;
+        const EC = elliptic.ec;
+        const ec = new EC('secp256k1');
+
+        createApp({
+            setup() {
+                const nodeUrl = ref('http://localhost:5000');
+                
+                // State Models
+                const wallet = ref({
+                    privateKeyHex: null,
+                    publicKeyHex: null,
+                    address: null,
+                    nonce: 0
+                });
+                
+                const chainState = ref({ balances: {}, escrow: {} });
+                const mempool = ref({ length: 0, transactions: [] });
+                const chain = ref({ length: 0, blocks: [] });
+
+                // UI Forms
+                const transferForm = ref({ to: '', amount: 0 });
+                const escrowForm = ref({ id: '', to: '', amount: 0 });
+                const notification = ref({ message: '', type: '' });
+
+                let pollingInterval = null;
+
+                // --- Cryptography Utils ---
+                
+                const generateWallet = () => {
+                    const keyPair = ec.genKeyPair();
+                    const pubKey = keyPair.getPublic(false, 'hex'); // uncompressed, starts with 04
+                    
+                    // Address derivation: last 20 bytes of SHA256 of public key
+                    const pubKeyWordArray = CryptoJS.enc.Hex.parse(pubKey);
+                    const hash = CryptoJS.SHA256(pubKeyWordArray).toString(CryptoJS.enc.Hex);
+                    const address = hash.slice(-40); // 20 bytes = 40 hex chars
+
+                    wallet.value = {
+                        privateKeyHex: keyPair.getPrivate('hex'),
+                        publicKeyHex: pubKey,
+                        address: address,
+                        nonce: 0 // In a real scenario, fetch this from chain history, assuming 0 for fresh local mem
+                    };
+                    showNotification("New wallet generated in memory.", "success");
+                };
+
+                const sortObjectKeysAlphabetically = (obj) => {
+                    if (typeof obj !== 'object' || obj === null) return obj;
+                    if (Array.isArray(obj)) return obj.map(sortObjectKeysAlphabetically);
+                    const sortedKeys = Object.keys(obj).sort();
+                    const result = {};
+                    for (const key of sortedKeys) {
+                        result[key] = sortObjectKeysAlphabetically(obj[key]);
+                    }
+                    return result;
+                };
+
+                const signTransaction = (txObject) => {
+                    if (!wallet.value.privateKeyHex) throw new Error("Wallet not loaded");
+
+                    // Ensure format matches Python JSON sorting without spaces
+                    const sortedTx = sortObjectKeysAlphabetically(txObject);
+                    const jsonString = JSON.stringify(sortedTx);
+                    
+                    // Hash the JSON string
+                    const hashHex = CryptoJS.SHA256(jsonString).toString(CryptoJS.enc.Hex);
+                    
+                    // Sign using elliptic
+                    const keyPair = ec.keyFromPrivate(wallet.value.privateKeyHex);
+                    const signature = keyPair.sign(hashHex);
+                    
+                    // Convert signature to DER format hex string (matches Python's cryptography standard output)
+                    const derSig = signature.toDER();
+                    const hexSig = derSig.map(b => b.toString(16).padStart(2, '0')).join('');
+                    
+                    return hexSig;
+                };
+
+                // --- API Interactions ---
+
+                const fetchApi = async (endpoint, method = 'GET', body = null) => {
+                    const url = `${nodeUrl.value.replace(/\/$/, '')}${endpoint}`;
+                    const options = { method, headers: {} };
+                    if (body) {
+                        options.headers['Content-Type'] = 'application/json';
+                        options.body = JSON.stringify(body);
+                    }
+                    try {
+                        const res = await fetch(url, options);
+                        const data = await res.json();
+                        if (!res.ok) throw new Error(data.detail || JSON.stringify(data));
+                        return data;
+                    } catch (err) {
+                        console.error(`API Error (${endpoint}):`, err);
+                        throw err;
+                    }
+                };
+
+                const refreshData = async () => {
+                    try {
+                        chainState.value = await fetchApi('/state');
+                        mempool.value = await fetchApi('/mempool');
+                        chain.value = await fetchApi('/chain');
+                    } catch (e) {
+                        // Silent fail for polling to avoid spamming UI
+                    }
+                };
+
+                const forceRefresh = async () => {
+                    await refreshData();
+                    showNotification("Data refreshed from node", "success");
+                };
+
+                const broadcastTx = async (type_tx, receiver, amount, payload) => {
+                    if (!wallet.value.address) {
+                        showNotification("Create a wallet first", "error");
+                        return;
+                    }
+
+                    // Base payload always needs public_key
+                    const fullPayload = { public_key: wallet.value.publicKeyHex, ...payload };
+                    
+                    const tx = {
+                        type_tx: type_tx,
+                        sender_address: wallet.value.address,
+                        receiver_address: receiver,
+                        amount: parseFloat(amount),
+                        nonce: wallet.value.nonce + 1,
+                        payload: fullPayload
+                    };
+
+                    try {
+                        tx.signature = signTransaction(tx);
+                        
+                        const res = await fetchApi('/tx', 'POST', tx);
+                        showNotification(`Transaction accepted! Hash: ${res.hash.slice(0, 10)}...`, "success");
+                        wallet.value.nonce += 1; // Increment local nonce
+                        await refreshData();
+                    } catch (err) {
+                        showNotification(`Failed: ${err.message}`, "error");
+                    }
+                };
+
+                // --- Actions ---
+
+                const claimTokens = () => {
+                    broadcastTx('claim', wallet.value.address, 50.0, {});
+                };
+
+                const submitTransfer = () => {
+                    if (!transferForm.value.to || transferForm.value.amount <= 0) {
+                        showNotification("Invalid transfer parameters", "error");
+                        return;
+                    }
+                    broadcastTx('transfer', transferForm.value.to, transferForm.value.amount, {});
+                    transferForm.value = { to: '', amount: 0 };
+                };
+
+                const submitCreateEscrow = () => {
+                    if (!escrowForm.value.id || !escrowForm.value.to || escrowForm.value.amount <= 0) {
+                        showNotification("Invalid escrow parameters", "error");
+                        return;
+                    }
+                    broadcastTx('create_escrow', escrowForm.value.to, escrowForm.value.amount, { escrow_id: escrowForm.value.id });
+                    escrowForm.value = { id: '', to: '', amount: 0 };
+                };
+
+                const actionEscrow = (action_type, escrow_id) => {
+                    // amount is 0 for release/cancel
+                    broadcastTx(action_type, wallet.value.address, 0.0, { escrow_id: escrow_id });
+                };
+
+                const mineBlock = async () => {
+                    try {
+                        const res = await fetchApi('/mine', 'GET');
+                        showNotification(`Mined Block! Hash: ${res.hash.slice(0, 10)}...`, "success");
+                        await refreshData();
+                    } catch (err) {
+                        showNotification(err.message.includes('Mempool empty') ? "Mempool is empty, nothing to mine." : `Mine error: ${err.message}`, "error");
+                    }
+                };
+
+                const syncChain = async () => {
+                    try {
+                        await fetchApi('/sync', 'POST');
+                        showNotification("Chain sync triggered.", "success");
+                        await refreshData();
+                    } catch (err) {
+                        showNotification(`Sync error: ${err.message}`, "error");
+                    }
+                };
+
+                // --- UI Helpers ---
+
+                const showNotification = (msg, type) => {
+                    notification.value = { message: msg, type };
+                    setTimeout(() => notification.value = { message: '', type: '' }, 4000);
+                };
+
+                // Computed
+                const balance = computed(() => {
+                    if (!wallet.value.address || !chainState.value.balances) return 0;
+                    return chainState.value.balances[wallet.value.address] || 0;
+                });
+
+                const myEscrows = computed(() => {
+                    if (!wallet.value.address || !chainState.value.escrow) return [];
+                    const address = wallet.value.address;
+                    return Object.entries(chainState.value.escrow).filter(([id, esc]) => 
+                        esc.sender === address || esc.receiver === address
+                    );
+                });
+
+                // Lifecycle
+                onMounted(() => {
+                    refreshData();
+                    pollingInterval = setInterval(refreshData, 5000);
+                });
+
+                onUnmounted(() => {
+                    if (pollingInterval) clearInterval(pollingInterval);
+                });
+
+                return {
+                    nodeUrl,
+                    wallet,
+                    chainState,
+                    mempool,
+                    chain,
+                    transferForm,
+                    escrowForm,
+                    notification,
+                    balance,
+                    myEscrows,
+                    generateWallet,
+                    forceRefresh,
+                    claimTokens,
+                    submitTransfer,
+                    submitCreateEscrow,
+                    actionEscrow,
+                    mineBlock,
+                    syncChain
+                };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
