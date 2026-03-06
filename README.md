@@ -30,7 +30,7 @@ pip install -r requirements.txt
 ```
 
 ### Lancement multi-nœuds (Démonstration P2P)
-
+<img width="1024" height="345" alt="image" src="https://github.com/user-attachments/assets/201d8851-5e8b-456e-b1f4-ff09f41cca8f" />
 Le réseau local de démonstration fonctionne avec 3 nœuds.
 
 1. Lancer le Nœud A (Port 5000) : `python src/p2p/node.py --port 5000 --difficulty 1`
@@ -68,6 +68,9 @@ Le projet est structuré autour de 4 modules principaux dans le dossier `src/` :
 
 ## 🌐 Réseau P2P Minimal
 
+<img width="761" height="275" alt="image" src="https://github.com/user-attachments/assets/7f778afc-1c0d-4c9f-a814-1f2664a31bb2" />
+
+
 Le réseau permet la découverte de pairs et la diffusion des transactions et des blocs.
 
 * Chaque transaction injectée est vérifiée, ajoutée au mempool puis diffusée (broadcast) si elle est valide.
@@ -75,6 +78,7 @@ Le réseau permet la découverte de pairs et la diffusion des transactions et de
 * Le consensus appliqué est un Proof of Work (PoW) simplifié.
 
 ## 📜 Smart Contracts (Escrow)
+<img width="440" height="578" alt="image" src="https://github.com/user-attachments/assets/aee4fbe3-04f2-4176-a49b-b6c4c5a1886e" />
 
 Coinami intègre un moteur de contrats minimalistes permettant l'exécution déterministe de modifications d'état.
 Le contrat d'**Escrow** (séquestre) fonctionne selon la machine d'état suivante :
@@ -91,3 +95,5 @@ Pour exécuter la suite complète (signatures, intégrité, validation, contrats
 ```bash
 pytest tests/
 ```
+
+
