@@ -7,11 +7,13 @@ import httpx
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.responses import StreamingResponse
 
 from src.contracts.state import State
 from src.core.block import Block
 from src.core.chain import Chain
 from src.core.transaction import Transaction
+from src.p2p.events import EventBus
 from src.p2p.schemas import (
     TransactionResponse,
     BlockResponse,
@@ -38,6 +40,7 @@ class Node:
         self.chain: Chain = Chain(difficulty=difficulty)
         self.state: State = State()
         self.seen_ids: set[str] = set()
+        self.events: EventBus = EventBus()
 
     # ------------------------------------------------------------------
     # Transactions
@@ -52,14 +55,22 @@ class Node:
         tx_hash = tx.calculate_hash()
         if tx_hash in self.seen_ids:
             return False
+
+        self.events.emit("tx:received", {"hash": tx_hash, "type": tx.type_tx, "sender": tx.sender_address, "receiver": tx.receiver_address, "amount": tx.amount})
+
         if not tx.is_valid():
+            self.events.emit("tx:rejected", {"hash": tx_hash, "reason": "invalid signature or structure"})
             return False
+
         self.seen_ids.add(tx_hash)
         self.mempool.append(tx)
+        self.events.emit("tx:validated", {"hash": tx_hash, "mempool_size": len(self.mempool)})
+        self.events.emit("mempool:updated", {"length": len(self.mempool)})
         return True
 
     async def broadcast_tx(self, tx_dict: dict) -> None:
         """Diffuse une transaction à tous les pairs."""
+        self.events.emit("tx:broadcast", {"peers": len(self.peers)})
         async with httpx.AsyncClient(timeout=5.0) as client:
             for peer in self.peers:
                 try:
@@ -81,27 +92,39 @@ class Node:
         if block_hash in self.seen_ids:
             return False
 
+        self.events.emit("block:received", {"hash": block_hash, "tx_count": len(block.transactions)})
+
         # Vérification de la merkle_root
         if block.b_header.merkle_root != block.simplified_merkle_root():
+            self.events.emit("block:rejected", {"hash": block_hash, "reason": "invalid merkle root"})
             return False
 
         if not self.chain.add_block(block):
+            self.events.emit("block:rejected", {"hash": block_hash, "reason": "chain rejected block"})
             return False
 
         self.seen_ids.add(block_hash)
 
         # Mettre à jour l'état avec les transactions confirmées
+        confirmed_hashes = []
         for tx in block.transactions:
             self.state.execute_tx(tx)
+            confirmed_hashes.append(tx.calculate_hash())
+
+        self.events.emit("state:updated", {"confirmed_tx": len(block.transactions)})
 
         # Purger le mempool des transactions confirmées
-        confirmed = {tx.calculate_hash() for tx in block.transactions}
+        confirmed = set(confirmed_hashes)
         self.mempool = [tx for tx in self.mempool if tx.calculate_hash() not in confirmed]
+
+        self.events.emit("block:validated", {"hash": block_hash, "height": len(self.chain.blocks), "tx_count": len(block.transactions)})
+        self.events.emit("mempool:updated", {"length": len(self.mempool)})
 
         return True
 
     async def broadcast_block(self, block_dict: dict) -> None:
         """Diffuse un bloc miné à tous les pairs."""
+        self.events.emit("block:broadcast", {"peers": len(self.peers)})
         async with httpx.AsyncClient(timeout=5.0) as client:
             for peer in self.peers:
                 try:
@@ -115,6 +138,8 @@ class Node:
 
     async def sync_chain(self) -> None:
         """Remplace la chaîne locale par la plus longue chaîne valide trouvée chez les pairs."""
+        self.events.emit("peer:sync_started", {"peers": len(self.peers)})
+        replaced = False
         async with httpx.AsyncClient(timeout=5.0) as client:
             for peer in self.peers:
                 try:
@@ -135,8 +160,12 @@ class Node:
                         for block in self.chain.blocks[1:]:  # skip genesis
                             for tx in block.transactions:
                                 self.state.execute_tx(tx)
+                        replaced = True
+                        self.events.emit("peer:sync_replaced", {"peer": peer, "new_length": len(self.chain.blocks)})
+                        self.events.emit("state:updated", {"reason": "chain replaced after sync"})
                 except Exception:
                     pass
+        self.events.emit("peer:sync_completed", {"replaced": replaced, "length": len(self.chain.blocks)})
 
 
 # ---------------------------------------------------------------------------
@@ -226,6 +255,8 @@ def add_peers(peers_data: PeersRequest) -> PeersResponse:
         if isinstance(peer, str) and peer not in node.peers:
             node.peers.append(peer)
             added.append(peer)
+    if added:
+        node.events.emit("peer:added", {"added": added, "total": len(node.peers)})
     return PeersResponse(added=added, total=len(node.peers))
 
 
@@ -241,6 +272,8 @@ async def mine() -> MineResponse:
     if not node.mempool:
         raise HTTPException(status_code=400, detail="Mempool empty — nothing to mine")
 
+    node.events.emit("block:mining_started", {"mempool_size": len(node.mempool)})
+
     node.chain.pending_transactions = list(node.mempool)
     block = node.chain.mine_block()
     node.mempool = []
@@ -249,12 +282,18 @@ async def mine() -> MineResponse:
         node.state.execute_tx(tx)
 
     block_dict = block.to_network_dict()
-    node.seen_ids.add(block.calculate_hash())
+    block_hash = block.calculate_hash()
+    node.seen_ids.add(block_hash)
+
+    node.events.emit("block:mining_completed", {"hash": block_hash, "height": len(node.chain.blocks), "tx_count": len(block.transactions)})
+    node.events.emit("state:updated", {"confirmed_tx": len(block.transactions)})
+    node.events.emit("mempool:updated", {"length": 0})
+
     await node.broadcast_block(block_dict)
 
     return MineResponse(
         status="mined",
-        hash=block.calculate_hash(),
+        hash=block_hash,
         block=block_dict
     )
 
@@ -287,16 +326,27 @@ async def post_claim(tx: Transaction) -> ClaimResponse:
     - Signature must be valid
     - 24-hour cooldown must have passed since the last claim
     """
+    tx_hash = tx.calculate_hash()
+    node.events.emit("claim:received", {"hash": tx_hash, "address": tx.sender_address})
+
     if tx.type_tx != "claim" or tx.amount != 50.0 or tx.sender_address != tx.receiver_address:
+        node.events.emit("claim:rejected", {"hash": tx_hash, "reason": "invalid claim parameters"})
         raise HTTPException(status_code=400, detail="Invalid claim transaction")
     if not tx.is_valid():
+        node.events.emit("claim:rejected", {"hash": tx_hash, "reason": "invalid signature"})
         raise HTTPException(status_code=400, detail="Invalid signature")
     if not node.state.execute_tx(tx):
+        node.events.emit("claim:rejected", {"hash": tx_hash, "reason": "24h cooldown not passed"})
         raise HTTPException(status_code=400, detail="Claim rejected: 24-hour cooldown has not passed")
+
+    balance = node.state.get_balance(tx.sender_address)
+    node.events.emit("claim:validated", {"hash": tx_hash, "address": tx.sender_address, "new_balance": balance})
+    node.events.emit("state:updated", {"reason": "claim executed"})
+
     return ClaimResponse(
         status="claimed",
-        hash=tx.calculate_hash(),
-        balance=node.state.get_balance(tx.sender_address),
+        hash=tx_hash,
+        balance=balance,
     )
 
 
@@ -326,6 +376,30 @@ async def sync() -> SyncResponse:
     return SyncResponse(
         status="synced",
         length=len(node.chain.blocks)
+    )
+
+
+@app.get("/events", tags=["Events"])
+async def sse_events():
+    """Server-Sent Events stream for real-time data-flow visualization.
+
+    Clients receive JSON events for every lifecycle action:
+    tx:received, tx:validated, tx:rejected, tx:broadcast,
+    block:received, block:validated, block:rejected, block:broadcast,
+    block:mining_started, block:mining_completed,
+    claim:received, claim:validated, claim:rejected,
+    peer:added, peer:sync_started, peer:sync_completed, peer:sync_replaced,
+    mempool:updated, state:updated.
+    """
+    queue = node.events.subscribe()
+    return StreamingResponse(
+        node.events.stream(queue),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
     )
 
 
