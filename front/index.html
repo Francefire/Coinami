@@ -148,10 +148,34 @@
             :class="notification.type === 'error' ? 'bg-red-500' : 'bg-green-500'">
             {{ notification.message }}
         </div>
+
+        <!-- Live Activity Feed (SSE) -->
+        <section class="bg-white rounded-lg shadow-md p-6 mt-6 border-t-4 border-indigo-500">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold">Live Activity Feed</h2>
+                <div class="flex items-center gap-3">
+                    <span class="flex items-center gap-1 text-sm" :class="sseConnected ? 'text-green-600' : 'text-red-500'">
+                        <span class="inline-block w-2 h-2 rounded-full" :class="sseConnected ? 'bg-green-500 animate-pulse' : 'bg-red-500'"></span>
+                        {{ sseConnected ? 'Connected' : 'Disconnected' }}
+                    </span>
+                    <button @click="clearActivityFeed" class="text-xs bg-gray-200 text-gray-600 px-2 py-1 rounded hover:bg-gray-300 transition">Clear</button>
+                </div>
+            </div>
+            <div class="space-y-1 max-h-80 overflow-y-auto font-mono text-xs" ref="activityFeedEl">
+                <div v-if="activityFeed.length === 0" class="text-gray-400 italic text-sm">Waiting for events…</div>
+                <div v-for="(evt, idx) in activityFeed" :key="idx"
+                     class="flex items-start gap-2 py-1 px-2 rounded transition-colors"
+                     :class="eventRowClass(evt.event)">
+                    <span class="text-gray-400 whitespace-nowrap">{{ formatTime(evt.timestamp) }}</span>
+                    <span class="font-bold whitespace-nowrap" :class="eventLabelClass(evt.event)">{{ evt.event }}</span>
+                    <span class="text-gray-600 truncate">{{ eventSummary(evt) }}</span>
+                </div>
+            </div>
+        </section>
     </div>
 
     <script>
-        const { createApp, ref, computed, onMounted, onUnmounted } = Vue;
+        const { createApp, ref, computed, onMounted, onUnmounted, nextTick } = Vue;
         const EC = elliptic.ec;
         const ec = new EC('secp256k1');
 
@@ -177,6 +201,88 @@
                 const notification = ref({ message: '', type: '' });
 
                 let pollingInterval = null;
+
+                // --- SSE / Activity Feed ---
+                const activityFeed = ref([]);
+                const sseConnected = ref(false);
+                const activityFeedEl = ref(null);
+                const MAX_FEED_ITEMS = 200;
+                let eventSource = null;
+
+                const connectSSE = () => {
+                    if (eventSource) { eventSource.close(); }
+                    const url = `${nodeUrl.value.replace(/\/$/, '')}/events`;
+                    eventSource = new EventSource(url);
+                    eventSource.onopen = () => { sseConnected.value = true; };
+                    eventSource.onerror = () => { sseConnected.value = false; };
+
+                    // Listen for all named event types
+                    const eventTypes = [
+                        'tx:received', 'tx:validated', 'tx:rejected', 'tx:broadcast',
+                        'block:received', 'block:validated', 'block:rejected', 'block:broadcast',
+                        'block:mining_started', 'block:mining_completed',
+                        'claim:received', 'claim:validated', 'claim:rejected',
+                        'peer:added', 'peer:sync_started', 'peer:sync_completed', 'peer:sync_replaced',
+                        'mempool:updated', 'state:updated',
+                    ];
+                    for (const evtType of eventTypes) {
+                        eventSource.addEventListener(evtType, (e) => {
+                            try {
+                                const payload = JSON.parse(e.data);
+                                activityFeed.value.push(payload);
+                                if (activityFeed.value.length > MAX_FEED_ITEMS) {
+                                    activityFeed.value = activityFeed.value.slice(-MAX_FEED_ITEMS);
+                                }
+                                // Auto-scroll
+                                nextTick(() => {
+                                    if (activityFeedEl.value) {
+                                        activityFeedEl.value.scrollTop = activityFeedEl.value.scrollHeight;
+                                    }
+                                });
+                                // Auto-refresh data on state/mempool/block changes
+                                if (['state:updated', 'mempool:updated', 'block:validated', 'block:mining_completed', 'claim:validated'].includes(payload.event)) {
+                                    refreshData();
+                                }
+                            } catch (err) {
+                                console.warn('SSE parse error:', err);
+                            }
+                        });
+                    }
+                };
+
+                const clearActivityFeed = () => { activityFeed.value = []; };
+
+                const formatTime = (ts) => {
+                    const d = new Date(ts * 1000);
+                    return d.toLocaleTimeString('en-GB', { hour12: false }) + '.' + String(d.getMilliseconds()).padStart(3, '0');
+                };
+
+                const eventRowClass = (eventName) => {
+                    if (eventName.includes('rejected')) return 'bg-red-50';
+                    if (eventName.includes('mining_completed') || eventName.includes('validated')) return 'bg-green-50';
+                    if (eventName.includes('mining_started') || eventName.includes('sync_started')) return 'bg-yellow-50';
+                    if (eventName.includes('broadcast')) return 'bg-blue-50';
+                    return 'bg-gray-50';
+                };
+
+                const eventLabelClass = (eventName) => {
+                    if (eventName.includes('rejected')) return 'text-red-600';
+                    if (eventName.includes('validated') || eventName.includes('completed')) return 'text-green-600';
+                    if (eventName.includes('started') || eventName.includes('received')) return 'text-yellow-600';
+                    if (eventName.includes('broadcast') || eventName.includes('updated')) return 'text-blue-600';
+                    return 'text-gray-600';
+                };
+
+                const eventSummary = (evt) => {
+                    const d = evt.data || {};
+                    if (d.hash) return `${(d.hash || '').slice(0, 12)}… ${d.reason || d.type || ''}`.trim();
+                    if (d.length !== undefined) return `size: ${d.length}`;
+                    if (d.address) return d.address.slice(0, 12) + '…';
+                    if (d.peers !== undefined) return `peers: ${d.peers}`;
+                    if (d.reason) return d.reason;
+                    if (d.added) return d.added.join(', ');
+                    return JSON.stringify(d).slice(0, 60);
+                };
 
                 // --- Cryptography Utils ---
                 
@@ -375,10 +481,12 @@
                 onMounted(() => {
                     refreshData();
                     pollingInterval = setInterval(refreshData, 5000);
+                    connectSSE();
                 });
 
                 onUnmounted(() => {
                     if (pollingInterval) clearInterval(pollingInterval);
+                    if (eventSource) eventSource.close();
                 });
 
                 return {
@@ -399,7 +507,16 @@
                     submitCreateEscrow,
                     actionEscrow,
                     mineBlock,
-                    syncChain
+                    syncChain,
+                    // SSE / Activity Feed
+                    activityFeed,
+                    sseConnected,
+                    activityFeedEl,
+                    clearActivityFeed,
+                    formatTime,
+                    eventRowClass,
+                    eventLabelClass,
+                    eventSummary,
                 };
             }
         }).mount('#app');
