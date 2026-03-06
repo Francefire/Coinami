@@ -63,7 +63,7 @@ class TestEventBus:
 
         # Run the async generator synchronously for one iteration
         gen = bus.stream(q)
-        line = asyncio.get_event_loop().run_until_complete(gen.__anext__())
+        line = asyncio.run(gen.__anext__())
 
         assert line.startswith("event: block:mined\n")
         assert "data:" in line
