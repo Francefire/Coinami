@@ -55,9 +55,12 @@ class Transaction(BaseModel):
         - La signature doit être présente et vérifiable via la clé publique
           stockée dans payload["public_key"] (hex de la clé X962).
         - Pour les transactions "claim" : montant doit être 50.0 et sender == receiver.
+        - Pour les transactions "release_escrow" et "cancel_escrow" : le montant peut être 0.
         """
-        if self.amount <= 0:
-            return False
+        # Allow zero amount only for escrow release/cancel operations
+        if self.type_tx not in ["release_escrow", "cancel_escrow"]:
+            if self.amount <= 0:
+                return False
         
         # Additional validation for claim transactions
         if self.type_tx == "claim":
